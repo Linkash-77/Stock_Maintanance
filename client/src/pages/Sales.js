@@ -8,8 +8,7 @@ import API from "../services/api";
 import { useToast } from "../components/Toast";
 import PageContainer from "../components/PageContainer";
 
-
-/* UI */
+/* ─── UI ─── */
 const StockPill = styled.div`
   display: flex;
   justify-content: space-between;
@@ -43,8 +42,15 @@ const FieldWrap = styled.div`
   gap: 12px;
 `;
 
+/* ─── Table ─── */
+const TableScroll = styled.div`
+  width: 100%;
+  overflow-x: auto;
+`;
+
 const Table = styled.table`
   width: 100%;
+  min-width: 320px;
   border-collapse: collapse;
   font-size: 13px;
 `;
@@ -54,6 +60,9 @@ const Th = styled.th`
   color: #8b909c;
   padding: 9px 14px;
   background: #f7f8fa;
+  text-align: left;
+  border-bottom: 1px solid #e4e6eb;
+  text-transform: uppercase;
 `;
 
 const Td = styled.td`
@@ -70,13 +79,44 @@ const ProductName = styled.span`
   font-weight: 500;
 `;
 
+/* date/time in two lines */
+const DateText = styled.div`
+  font-size: 12px;
+  color: #3d3d3a;
+  font-weight: 500;
+`;
+
+const TimeText = styled.div`
+  font-size: 11px;
+  color: #8b909c;
+  margin-top: 2px;
+`;
+
 const Empty = styled.div`
   text-align: center;
   padding: 28px 0;
   color: #8b909c;
 `;
 
-/* MAIN */
+/* ─── Helper ─── */
+function formatDateTime(raw) {
+  if (!raw) return { date: "—", time: "" };
+  const d = new Date(raw);
+  const date = d.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  const time = d.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return { date, time };
+}
+
+/* ═══════════════════════════════════════════════════════ */
+
 function Sales() {
   const [products, setProducts] = useState([]);
   const [history, setHistory] = useState([]);
@@ -86,32 +126,24 @@ function Sales() {
   const [loading, setLoading] = useState(false);
   const { success } = useToast();
 
-
-  /* ✅ FIX 1: UUID SAFE MATCH */
-  const selectedProduct = products.find(
-    (p) => p.id === productId
-  );
-
+  const selectedProduct = products.find((p) => p.id === productId);
   const unit = selectedProduct?.unit;
 
-  /* FETCH */
   const fetchData = async () => {
     try {
       const [productsRes, salesRes] = await Promise.all([
         API.get("/products"),
         API.get("/sales"),
       ]);
-
       setProducts(productsRes.data || []);
-      setHistory(salesRes.data || []);
+      // show newest first
+      setHistory((salesRes.data || []).slice().reverse());
     } catch (err) {
       console.error(err);
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
   useEffect(() => {
     if (productId) fetchStock(productId);
@@ -126,32 +158,20 @@ function Sales() {
     }
   };
 
-  /* SUBMIT */
   const handleSubmit = async () => {
-    if (!productId || !qty) {
-      alert("Fill all fields");
-      return;
-    }
-
+    if (!productId || !qty) { alert("Fill all fields"); return; }
     try {
       setLoading(true);
-
-      /* ✅ FIX 2: STORE UNIT BEFORE RESET */
       const currentUnit = selectedProduct?.unit;
-
       const res = await API.post("/sales", {
         productId,
         soldWeight: Number(qty),
       });
-
       success(`Stock updated • Remaining: ${res.data.remainingStock} ${currentUnit}`);
-      /* RESET AFTER */
       setQty("");
       setProductId("");
       setStock(0);
-
       fetchData();
-
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.error || "Sale failed");
@@ -164,120 +184,107 @@ function Sales() {
 
   return (
     <PageContainer>
-    <div>
+      <div>
 
-      {/* FORM */}
-      <Card>
-        <CardHead>
-          <CardTitle>Record sale</CardTitle>
-        </CardHead>
+        {/* FORM */}
+        <Card>
+          <CardHead><CardTitle>Record sale</CardTitle></CardHead>
+          <CardBody>
+            <FieldWrap>
 
-        <CardBody>
-          <FieldWrap>
+              <div>
+                <FormLabel>Product</FormLabel>
+                <Select
+                  value={productId}
+                  onChange={(e) => setProductId(e.target.value)}
+                >
+                  <option value="">— select product —</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </Select>
+              </div>
 
-            {/* PRODUCT */}
-            <div>
-              <FormLabel>Product</FormLabel>
-              <Select
-                value={productId}
-                onChange={(e) => setProductId(e.target.value)}
+              {productId && unit && (
+                <StockPill $low={stock < 1}>
+                  <StockPillLabel>Available stock</StockPillLabel>
+                  <StockPillValue>
+                    {unit === "kg" ? `${stock.toFixed(2)} kg` : `${stock} pcs`}
+                  </StockPillValue>
+                </StockPill>
+              )}
+
+              <div>
+                <FormLabel>Quantity to sell ({unit || "--"})</FormLabel>
+                <Input
+                  type="number"
+                  value={qty}
+                  onChange={(e) => setQty(e.target.value)}
+                  placeholder={unit === "kg" ? "0.00" : unit === "pcs" ? "Enter count" : ""}
+                />
+              </div>
+
+              {isOverStock && qty > 0 && unit && (
+                <WarnStrip>
+                  Only {unit === "kg" ? stock.toFixed(2) : stock} {unit} available
+                </WarnStrip>
+              )}
+
+              <Button
+                onClick={handleSubmit}
+                disabled={!qty || isOverStock || loading}
               >
-                <option value="">— select product —</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </Select>
-            </div>
+                {loading ? "Recording…" : "Record sale"}
+              </Button>
 
-            {/* STOCK */}
-            {productId && unit && (
-              <StockPill $low={stock < 1}>
-                <StockPillLabel>Available stock</StockPillLabel>
-                <StockPillValue>
-                  {unit === "kg"
-                    ? `${stock.toFixed(2)} kg`
-                    : `${stock} pcs`}
-                </StockPillValue>
-              </StockPill>
+            </FieldWrap>
+          </CardBody>
+        </Card>
+
+        {/* HISTORY */}
+        <Card>
+          <CardHead><CardTitle>Sales history</CardTitle></CardHead>
+          <CardBody style={{ padding: 0 }}>
+            {history.length === 0 ? (
+              <Empty>No sales yet</Empty>
+            ) : (
+              <TableScroll>
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>Date & Time</Th>
+                      <Th>Product</Th>
+                      <Th style={{ textAlign: "right" }}>Qty</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((s) => {
+                      const { date, time } = formatDateTime(s.created_at);
+                      return (
+                        <tr key={s.id}>
+                          <Td>
+                            <DateText>{date}</DateText>
+                            <TimeText>{time}</TimeText>
+                          </Td>
+                          <Td>
+                            <ProductName>{s.product_name}</ProductName>
+                          </Td>
+                          <TdRight>
+                            {s.unit === "kg"
+                              ? `${(s.sold_weight ?? 0).toFixed(2)} kg`
+                              : `${s.sold_weight ?? 0} pcs`}
+                          </TdRight>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </Table>
+              </TableScroll>
             )}
+          </CardBody>
+        </Card>
 
-            {/* QUANTITY */}
-            <div>
-              <FormLabel>
-                Quantity to sell ({unit || "--"})
-              </FormLabel>
-
-              <Input
-                type="number"
-                value={qty}
-                onChange={(e) => setQty(e.target.value)}
-                placeholder={
-                  unit === "kg"
-                    ? "0.00"
-                    : unit === "pcs"
-                    ? "Enter count"
-                    : ""
-                }
-              />
-            </div>
-
-            {/* WARNING */}
-            {isOverStock && qty > 0 && unit && (
-              <WarnStrip>
-                Only {unit === "kg" ? stock.toFixed(2) : stock} {unit} available
-              </WarnStrip>
-            )}
-
-            <Button
-              onClick={handleSubmit}
-              disabled={!qty || isOverStock || loading}
-            >
-              {loading ? "Recording…" : "Record sale"}
-            </Button>
-
-          </FieldWrap>
-        </CardBody>
-      </Card>
-
-      {/* HISTORY */}
-      <Card>
-        <CardHead>
-          <CardTitle>Sales history</CardTitle>
-        </CardHead>
-
-        <CardBody style={{ padding: 0 }}>
-          {history.length === 0 ? (
-            <Empty>No sales yet</Empty>
-          ) : (
-            <Table>
-              <thead>
-                <tr>
-                  <Th>Product</Th>
-                  <Th style={{ textAlign: "right" }}>Qty</Th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {history.map((s) => (
-                  <tr key={s.id}>
-                    <Td>
-                      <ProductName>{s.product_name}</ProductName>
-                    </Td>
-
-                    <TdRight>
-                      {s.unit === "kg"
-                        ? `${(s.sold_weight ?? 0).toFixed(2)} kg`
-                        : `${s.sold_weight ?? 0} pcs`}
-                    </TdRight>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          )}
-        </CardBody>
-      </Card>
-
-    </div>
+      </div>
     </PageContainer>
   );
 }

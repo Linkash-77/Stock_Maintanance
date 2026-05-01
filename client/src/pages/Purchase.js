@@ -55,7 +55,7 @@ const TableScroll = styled.div`
 
 const Table = styled.table`
   width: 100%;
-  min-width: 320px;
+  min-width: 420px;
   border-collapse: collapse;
   font-size: 13px;
 `;
@@ -65,6 +65,9 @@ const Th = styled.th`
   color: #8b909c;
   padding: 9px 14px;
   background: #f7f8fa;
+  text-align: left;
+  border-bottom: 1px solid #e4e6eb;
+  text-transform: uppercase;
 `;
 
 const Td = styled.td`
@@ -76,11 +79,41 @@ const TdRight = styled(Td)`
   text-align: right;
 `;
 
+/* date/time displayed in two lines */
+const DateText = styled.div`
+  font-size: 12px;
+  color: #3d3d3a;
+  font-weight: 500;
+`;
+
+const TimeText = styled.div`
+  font-size: 11px;
+  color: #8b909c;
+  margin-top: 2px;
+`;
+
 const Empty = styled.div`
   text-align: center;
   padding: 28px 0;
   color: #8b909c;
 `;
+
+/* ─── Helper ─── */
+function formatDateTime(raw) {
+  if (!raw) return { date: "—", time: "" };
+  const d = new Date(raw);
+  const date = d.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  const time = d.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return { date, time };
+}
 
 /* ═══════════════════════════════════════════════════════ */
 
@@ -106,16 +139,16 @@ function Purchase() {
         API.get("/purchase"),
       ]);
       setProducts(productsRes.data);
-      setHistory(purchasesRes.data || []);
+      // show newest first
+      setHistory((purchasesRes.data || []).slice().reverse());
     } catch (err) {
       console.error(err);
     }
   };
 
-  /* 🔥 SET DEFAULT WASTE */
+  /* set default waste when product changes */
   useEffect(() => {
     if (!productId) return;
-
     if (unit === "pcs" || !hasWaste) {
       setWaste("");
     } else {
@@ -123,59 +156,28 @@ function Purchase() {
     }
   }, [productId, unit, hasWaste, selectedProduct]);
 
-  /* 🔥 FIXED CALCULATION */
+  /* recalculate usable weight */
   useEffect(() => {
-    if (!rawWeight) {
-      setUsable(0);
-      return;
-    }
-
+    if (!rawWeight) { setUsable(0); return; }
     const raw = Number(rawWeight);
-
-    // PCS → no waste
-    if (unit === "pcs") {
-      setUsable(raw);
-      return;
-    }
-
-    // KG but no waste
-    if (!hasWaste) {
-      setUsable(raw);
-      return;
-    }
-
-    // KG + waste
+    if (unit === "pcs" || !hasWaste) { setUsable(raw); return; }
     const wasteValue = Number(waste || 0);
-    const result = raw * (1 - wasteValue / 100);
-
-    setUsable(result.toFixed(2));
-
+    setUsable((raw * (1 - wasteValue / 100)).toFixed(2));
   }, [rawWeight, waste, unit, hasWaste]);
 
   const handleSubmit = async () => {
-    if (!productId || !rawWeight) {
-      alert("Fill all fields");
-      return;
-    }
-
+    if (!productId || !rawWeight) { alert("Fill all fields"); return; }
     try {
       setLoading(true);
-
       await API.post("/purchase", {
         productId,
         rawWeight: Number(rawWeight),
-        wastePercentage:
-          unit === "kg" && hasWaste
-            ? Number(waste || 0)
-            : 0,
+        wastePercentage: unit === "kg" && hasWaste ? Number(waste || 0) : 0,
       });
-
       setProductId("");
       setRawWeight("");
       setWaste("");
-
       fetchData();
-
     } catch (err) {
       console.error(err);
       alert("Error adding purchase");
@@ -215,7 +217,6 @@ function Purchase() {
                 />
               </div>
 
-              {/* 🔥 HIDE FOR PCS */}
               {unit === "kg" && hasWaste && (
                 <div>
                   <FormLabel>Waste %</FormLabel>
@@ -257,21 +258,39 @@ function Purchase() {
               <Table>
                 <thead>
                   <tr>
+                    <Th>Date & Time</Th>
                     <Th>Product</Th>
-                    <Th>Raw</Th>
-                    <Th>Usable</Th>
-                    <Th>Waste</Th>
+                    <Th style={{ textAlign: "right" }}>Raw</Th>
+                    <Th style={{ textAlign: "right" }}>Usable</Th>
+                    <Th style={{ textAlign: "right" }}>Waste</Th>
                   </tr>
                 </thead>
                 <tbody>
-                  {history.map((p) => (
-                    <tr key={p.id}>
-                      <Td>{p.product_name}</Td>
-                      <TdRight>{p.raw_weight}</TdRight>
-                      <TdRight>{p.usable_weight}</TdRight>
-                      <TdRight>{p.waste_percentage}%</TdRight>
-                    </tr>
-                  ))}
+                  {history.map((p) => {
+                    const { date, time } = formatDateTime(p.created_at);
+                    return (
+                      <tr key={p.id}>
+                        <Td>
+                          <DateText>{date}</DateText>
+                          <TimeText>{time}</TimeText>
+                        </Td>
+                        <Td>{p.product_name}</Td>
+                        <TdRight>
+                          {p.unit === "kg"
+                            ? `${Number(p.raw_weight).toFixed(2)} kg`
+                            : `${p.raw_weight} pcs`}
+                        </TdRight>
+                        <TdRight>
+                          {p.unit === "kg"
+                            ? `${Number(p.usable_weight).toFixed(2)} kg`
+                            : `${p.usable_weight} pcs`}
+                        </TdRight>
+                        <TdRight>
+                          {p.has_waste ? `${p.waste_percentage}%` : "—"}
+                        </TdRight>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </Table>
             </TableScroll>
