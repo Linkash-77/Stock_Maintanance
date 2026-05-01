@@ -104,8 +104,9 @@ router.post("/:id/reset-stock", async (req, res) => {
     const { error: insertErr } = await supabase.from("purchases").insert([
       {
         product_id: id,
+        raw_weight: 0,              // required NOT NULL column
+        waste_percentage: 0,
         usable_weight: -currentStock, // cancels out the current stock exactly
-        note: "Stock reset to zero",
       },
     ]);
 
